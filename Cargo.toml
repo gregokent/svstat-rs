@@ -1,0 +1,6 @@
+[package]
+name = "rupervise"
+version = "0.1.0"
+authors = ["Greg Kent <gregokent@gmail.com>"]
+
+[dependencies]
