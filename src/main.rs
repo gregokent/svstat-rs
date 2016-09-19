@@ -23,10 +23,10 @@ fn main() {
 }
 
 #[derive(Debug,Default)]
-struct Service
+struct Service<'a>
 {
-    name:        String,
-    path:        String,
+    name:        &'a str,
+    path:        &'a str,
     pid:         Option<u32>,
     is_up:       bool,
     normally_up: bool,
@@ -87,8 +87,8 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
     let paused = status_buf[16] as char;
 
     let service = Service { 
-            name: dir.file_name().unwrap().to_str().unwrap().to_string(),
-            path: String::from(dir.parent().unwrap().to_str().unwrap()),
+            name: dir.file_name().unwrap().to_str().unwrap(),
+            path: dir.parent().unwrap().to_str().unwrap(),
             is_up: if pid != 0 { true } else { false },
             normally_up: normally_up,
             is_paused: if paused as u8 != 0 { true } else {false},
