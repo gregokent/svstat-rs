@@ -1,0 +1,25 @@
+Supervise Format
+================
+<name of supervised>(pid <pid>): <status> [desired status] <duration>
+
+rpc
+---
+methods:
+  - ServiceStatus
+      params:
+        service     - String
+        path        - String
+        pid         - Integer
+        isUp        - Boolean
+        normallyup  - Boolean
+        duration    - Integer
+
+  - SendCommand
+      params:
+        service - String
+        command - Array of String
+
+
+  Design Ideas:
+  - Backend reads status from supervised services, sends update to front-end using JSON
+  -
