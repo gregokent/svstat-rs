@@ -20,7 +20,6 @@ fn main() {
     }
 
     env::set_current_dir(&original_dir).unwrap();
-    println!("Hello, world!");
 }
 
 #[derive(Debug,Default)]
@@ -78,10 +77,11 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
         };
     }
     
-    let mut  pid:u32     = status_buf[15] as u32;
-    pid = pid << 8; pid += status_buf[14] as u32;
-    pid = pid << 8; pid += status_buf[13] as u32;
-    pid = pid << 8; pid += status_buf[12] as u32;
+    let pid = get_pid(&status_buf[12..16]);
+    //let mut  pid:u32     = status_buf[15] as u32;
+    //pid = pid << 8; pid += status_buf[14] as u32;
+    //pid = pid << 8; pid += status_buf[13] as u32;
+    //pid = pid << 8; pid += status_buf[12] as u32;
 
     let want = status_buf[17] as char;
     let paused = status_buf[16] as char;
@@ -98,4 +98,15 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
 
     println!("{:?}", service);
     Ok(())
+}
+
+fn get_pid(pid_slice:&[u8]) -> u32 {
+     
+    let mut  pid:u32     = pid_slice[3] as u32;
+    pid = pid << 8; pid += pid_slice[2] as u32;
+    pid = pid << 8; pid += pid_slice[1] as u32;
+    pid = pid << 8; pid += pid_slice[0] as u32;
+
+    pid
+   
 }
