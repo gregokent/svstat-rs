@@ -27,23 +27,40 @@ fn main() {
 
 #[derive(Debug)]
 enum SvstatError {
-    Io(io::Error),
+    UnableToChDir,
+    UnableToStatDown,
+    SuperviseNotRunning,
+    UnableToOpenSuperviseOk,
+    UnableToOpenSuperviseStatus,
+    StatusBadFormat,
+    StatusOtherError,
+}
+
+#[derive(Debug)]
+enum SvstatType {
+    Error(SvstatError),
+    ValidSvc {
+        pid: Option<u32>,
+        normally_up: bool,
+        is_pasued: bool,
+        duration: u32,
+    },
 }
 
 #[derive(Debug)]
 struct Service {
     name: PathBuf,
     pid: Option<u32>,
-    is_up: bool,
     normally_up: bool,
     is_paused: bool,
     duration: u32,
 }
 
-fn check_supervise(dir: &Path) -> io::Result<()> {
+fn check_supervise(dir: &Path) -> Result<Service, SvstatError> {
 
-    if let Err(_) = env::set_current_dir(&dir) {
+    if let Err(e) = env::set_current_dir(&dir) {
         println!("unable to chdir: {}", dir.display());
+        return Err(SvstatError::UnableToChDir);
     }
 
     let mut normally_up = false;
@@ -61,10 +78,10 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
         .open("supervise/ok") {
         if e.kind() == io::ErrorKind::Other {
             println!("supervise not running");
-            return Ok(());
+            return Err(SvstatError::SuperviseNotRunning);
         }
         println!("unable to open supervise/ok: {}", e.description());
-        return Ok(());
+        return Err(SvstatError::UnableToOpenSuperviseOk);
     }
 
     let mut status_buf: [u8; 18] = [0; 18];
@@ -73,7 +90,7 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
             Ok(status_file) => status_file,
             Err(e) => {
                 println!("unable to open supervise/status: {}", e.description());
-                return Ok(());
+                return Err(SvstatError::UnableToOpenSuperviseStatus);
             }
         };
         let read_bytes = status_file.read(&mut status_buf[..]);
@@ -81,7 +98,7 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
         match read_bytes {
             Ok(n) if n == status_buf.len() => {}
             Ok(_) => println!("{} bad format", base),
-            Err(e) => println!("{} {}", base, e.description()),
+            Err(e) => return Err(SvstatError::StatusOtherError),
         };
     }
 
@@ -93,7 +110,6 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
     let dirpath = dir.to_path_buf();
     let service = Service {
         name: dir.to_path_buf(),
-        is_up: if pid != 0 { true } else { false },
         normally_up: normally_up,
         is_paused: if paused as u8 != 0 { true } else { false },
         duration: 0,
@@ -101,7 +117,7 @@ fn check_supervise(dir: &Path) -> io::Result<()> {
     };
 
     println!("{:?}", service);
-    Ok(())
+    Ok(service)
 }
 
 fn get_pid(pid_slice: &[u8]) -> u32 {
