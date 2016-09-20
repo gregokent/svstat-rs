@@ -50,6 +50,7 @@ enum SvstatType {
 #[derive(Debug)]
 struct Service {
     name: PathBuf,
+    status: Option<SvstatType>,
     pid: Option<u32>,
     normally_up: bool,
     is_paused: bool,
@@ -110,6 +111,7 @@ fn check_supervise(dir: &Path) -> Result<Service, SvstatError> {
     let dirpath = dir.to_path_buf();
     let service = Service {
         name: dir.to_path_buf(),
+        status: None,
         normally_up: normally_up,
         is_paused: if paused as u8 != 0 { true } else { false },
         duration: 0,
