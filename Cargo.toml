@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Greg Kent <gregokent@gmail.com>"]
 
 [dependencies]
+libc = "0.2.16"
 
 [dependencies.xi-rpc]
 path = "rpc"
