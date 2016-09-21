@@ -19,7 +19,12 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let dirs = args.iter().skip(1);
     for dir in dirs {
-        check_supervise(Path::new(dir)).unwrap();
+        match check_supervise(Path::new(dir)) {
+            Ok(sv) => println!("{:?}", sv),
+
+            Err(e) => println!("{}: {:?}", dir, e),
+        }
+
     }
 
     env::set_current_dir(&original_dir).unwrap();
@@ -37,13 +42,20 @@ enum SvstatError {
 }
 
 #[derive(Debug)]
+enum SvWants {
+    WantsUp,
+    WantsDown,
+}
+
+#[derive(Debug)]
 enum SvstatType {
-    Error(SvstatError),
-    ValidSvc {
+    SvError(SvstatError),
+    SvOk {
         pid: Option<u32>,
         normally_up: bool,
-        is_pasued: bool,
+        is_paused: bool,
         duration: u32,
+        wants: Option<SvWants>,
     },
 }
 
@@ -51,16 +63,18 @@ enum SvstatType {
 struct Service {
     name: PathBuf,
     status: Option<SvstatType>,
-    pid: Option<u32>,
-    normally_up: bool,
-    is_paused: bool,
-    duration: u32,
+}
+
+fn open_write<P: AsRef<Path>>(path: P) -> io::Result<File> {
+    OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
 }
 
 fn check_supervise(dir: &Path) -> Result<Service, SvstatError> {
 
     if let Err(e) = env::set_current_dir(&dir) {
-        println!("unable to chdir: {}", dir.display());
         return Err(SvstatError::UnableToChDir);
     }
 
@@ -69,19 +83,14 @@ fn check_supervise(dir: &Path) -> Result<Service, SvstatError> {
         if e.kind() == io::ErrorKind::NotFound {
             normally_up = true;
         } else {
-            println!("unable to stat down: {}", e);
+            return Err(SvstatError::UnableToStatDown);
         }
     }
 
-    if let Err(e) = OpenOptions::new()
-        .write(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open("supervise/ok") {
+    if let Err(e) = open_write("supervise/ok") {
         if e.kind() == io::ErrorKind::Other {
-            println!("supervise not running");
             return Err(SvstatError::SuperviseNotRunning);
         }
-        println!("unable to open supervise/ok: {}", e.description());
         return Err(SvstatError::UnableToOpenSuperviseOk);
     }
 
@@ -90,15 +99,13 @@ fn check_supervise(dir: &Path) -> Result<Service, SvstatError> {
         let mut status_file = match File::open("supervise/status") {
             Ok(status_file) => status_file,
             Err(e) => {
-                println!("unable to open supervise/status: {}", e.description());
                 return Err(SvstatError::UnableToOpenSuperviseStatus);
             }
         };
         let read_bytes = status_file.read(&mut status_buf[..]);
-        let base = "unable to read supervise/status:";
         match read_bytes {
             Ok(n) if n == status_buf.len() => {}
-            Ok(_) => println!("{} bad format", base),
+            Ok(_) => return Err(SvstatError::StatusBadFormat), 
             Err(e) => return Err(SvstatError::StatusOtherError),
         };
     }
@@ -111,14 +118,19 @@ fn check_supervise(dir: &Path) -> Result<Service, SvstatError> {
     let dirpath = dir.to_path_buf();
     let service = Service {
         name: dir.to_path_buf(),
-        status: None,
-        normally_up: normally_up,
-        is_paused: if paused as u8 != 0 { true } else { false },
-        duration: 0,
-        pid: if pid != 0 { Some(pid) } else { None },
+        status: Some(SvstatType::SvOk {
+            pid: if pid != 0 { Some(pid) } else { None },
+            normally_up: normally_up,
+            is_paused: if paused as u8 != 0 { true } else { false },
+            duration: 0,
+            wants: match want { 
+                'u' => Some(SvWants::WantsUp),
+                'd' => Some(SvWants::WantsDown),
+                _ => None,
+            },
+        }),
     };
 
-    println!("{:?}", service);
     Ok(service)
 }
 
