@@ -117,6 +117,7 @@ fn main() {
         for sv in &mut services {
             update_supervise(sv);
             println!("{}", sv);
+            env::set_current_dir(&original_dir).unwrap();
         }
         // println!("{}\n\n", services);
         println!("");
