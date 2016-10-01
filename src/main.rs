@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 extern crate libc;
 use std::os::unix::fs::OpenOptionsExt;
 
+extern crate rupervise;
+use rupervise::tai::*;
+
 #[derive(Debug, Copy, Clone)]
 enum SvstatError {
     UnableToChDir,
@@ -32,7 +35,7 @@ enum SvstatType {
         pid: Option<u32>,
         normally_up: bool,
         is_paused: bool,
-        duration: u32,
+        duration: u64,
         wants: Option<SvWants>,
     },
 }
@@ -183,11 +186,17 @@ fn update_supervise(service: &mut Service) -> &mut Service {
     let want = status_buf[17] as char;
     let paused = status_buf[16] as char;
 
+    let mut when = rupervise::tai::unpack(&status_buf[0..8]);
+    let now = rupervise::tai::now();
+
+    if now < when { when = now; }
+
+
     service.status = Some(SvstatType::SvOk {
         pid: if pid != 0 { Some(pid) } else { None },
         normally_up: normally_up,
         is_paused: if paused as u8 != 0 { true } else { false },
-        duration: 0,
+        duration: now.as_secs() - when.as_secs(),
         wants: match want { 
             'u' => Some(SvWants::WantsUp),
             'd' => Some(SvWants::WantsDown),
