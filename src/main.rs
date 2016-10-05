@@ -1,15 +1,21 @@
+extern crate libc;
+extern crate rupervise;
+extern crate rustbox;
+
 use std::env;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-extern crate libc;
+
 use std::os::unix::fs::OpenOptionsExt;
 
-extern crate rupervise;
 use rupervise::tai::*;
+use rustbox::{RustBox, Color, Key};
+
 
 #[derive(Debug, Copy, Clone)]
 enum SvstatError {
@@ -28,7 +34,7 @@ enum SvWants {
     WantsDown,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum SvstatType {
     SvError(SvstatError),
     SvOk {
@@ -40,7 +46,7 @@ enum SvstatType {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Service {
     name: PathBuf,
     status: Option<SvstatType>,
@@ -88,6 +94,21 @@ impl std::fmt::Display for Service {
     }
 }
 
+#[derive(Debug,Clone)]
+enum Mode {
+    Normal,
+    Command,
+}
+
+struct State {
+    mode: Mode,
+    highlighted: Vec<usize>,
+    services: Vec<Service>,
+}
+
+// impl<'a> State {
+//    fn new<'a>(&'a Vec<Service>) -> State {
+
 
 fn main() {
 
@@ -112,15 +133,55 @@ fn main() {
 
     }
 
+    let rustbox = RustBox::init(Default::default()).unwrap();
+    //    let state = State {
+    //        mode: Mode::Normal,
+    //        highlighted: Vec::new(),
+    //        services: &services,
+    //    };
+
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1000));
+        let now = Instant::now();
         for sv in &mut services {
             update_supervise(sv);
-            println!("{}", sv);
+            // println!("{}", sv);
             env::set_current_dir(&original_dir).unwrap();
         }
+
+        rustbox.draw(&services);
+        let timeout = Duration::new(0, 1000000);
+        //        if let rustbox::Event::KeyEvent(mkey) = rustbox.peek_event(timeout, false)
+        //            .ok()
+        //            .expect("poll failed") {
+        //            match mkey {
+        //                Key::Ctrl('c') => break,
+        //                3 => break,
+        //                _ => {
+        //                    rustbox.write(0, 10, &format!("{:?}", mkey));
+        //                    rustbox.present();
+        //                }
+        //            }
+        //        }
+        if let rustbox::Event::KeyEventRaw(mmod, mkey, mch) = rustbox.peek_event(timeout, true)
+            .ok()
+            .expect("poll failed") {
+            match mkey {
+                3 => break,
+                _ => {
+                    rustbox.write(0, 10, &format!("{:?}", mkey));
+                }
+            }
+            rustbox.write(0, 11, &format!("{}", mch));
+            rustbox.present();
+        }
+        let elapsed = now.elapsed();
+        let seconds = elapsed.as_secs();
+        let nanos = elapsed.subsec_nanos();
+        // println!("time: {}",
+        //         (seconds * 1000) as f64 + (nanos as f64 / 1000000f64));
         // println!("{}\n\n", services);
-        println!("");
+        // println!("");
     }
     // println!("{:?}", services);
 }
@@ -190,7 +251,9 @@ fn update_supervise(service: &mut Service) -> &mut Service {
     let mut when = rupervise::tai::unpack(&status_buf[0..8]);
     let now = rupervise::tai::now();
 
-    if now < when { when = now; }
+    if now < when {
+        when = now;
+    }
 
 
     service.status = Some(SvstatType::SvOk {
@@ -220,4 +283,37 @@ fn get_pid(pid_slice: &[u8]) -> u32 {
 
     pid
 
+}
+
+// struct ServiceState {
+//
+// }
+
+trait ScreenWriter {
+    fn write(&self, x: usize, y: usize, text: &str);
+    fn write_inverted(&self, x: usize, y: usize, text: &str);
+    fn draw(&self, services: &[Service]);
+}
+
+impl ScreenWriter for RustBox {
+    fn write(&self, x: usize, y: usize, text: &str) {
+        self.print(x, y, rustbox::RB_BOLD, Color::White, Color::Default, text);
+    }
+
+    fn write_inverted(&self, x: usize, y: usize, text: &str) {
+        self.print(x, y, rustbox::RB_BOLD, Color::Black, Color::White, text);
+    }
+
+    fn draw(&self, services: &[Service]) {
+        self.clear();
+        self.present();
+
+        for (i, service) in services.iter().enumerate() {
+            let y = i + 1;
+            let s = format!("{:>3}: {}", i, service);
+
+            self.write(0, y, &s);
+        }
+        self.present();
+    }
 }

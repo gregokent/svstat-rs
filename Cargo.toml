@@ -5,6 +5,7 @@ authors = ["Greg Kent <gregokent@gmail.com>"]
 
 [dependencies]
 libc = "0.2.16"
+rustbox = "0.9.0"
 
 [dependencies.xi-rpc]
 path = "rpc"
