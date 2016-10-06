@@ -100,9 +100,10 @@ enum Mode {
     Command,
 }
 
+#[derive(Clone, Debug)]
 struct State {
     mode: Mode,
-    highlighted: Vec<usize>,
+    highlighted: Option<usize>,
     services: Vec<Service>,
 }
 
@@ -134,57 +135,96 @@ fn main() {
     }
 
     let rustbox = RustBox::init(Default::default()).unwrap();
-    //    let state = State {
-    //        mode: Mode::Normal,
-    //        highlighted: Vec::new(),
-    //        services: &services,
-    //    };
+    let mut state = State {
+        mode: Mode::Normal,
+        highlighted: None,
+        services: services,
+    };
 
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        std::thread::sleep(std::time::Duration::from_millis(100));
         let now = Instant::now();
-        for sv in &mut services {
+        for sv in &mut state.services {
             update_supervise(sv);
-            // println!("{}", sv);
             env::set_current_dir(&original_dir).unwrap();
         }
 
-        rustbox.draw(&services);
+        rustbox.draw(&state);
         let timeout = Duration::new(0, 1000000);
-        //        if let rustbox::Event::KeyEvent(mkey) = rustbox.peek_event(timeout, false)
-        //            .ok()
-        //            .expect("poll failed") {
-        //            match mkey {
-        //                Key::Ctrl('c') => break,
-        //                3 => break,
-        //                _ => {
-        //                    rustbox.write(0, 10, &format!("{:?}", mkey));
-        //                    rustbox.present();
-        //                }
-        //            }
-        //        }
-        if let rustbox::Event::KeyEventRaw(mmod, mkey, mch) = rustbox.peek_event(timeout, true)
+        if let rustbox::Event::KeyEvent(mkey) = rustbox.peek_event(timeout, false)
             .ok()
             .expect("poll failed") {
             match mkey {
-                3 => break,
+                Key::Ctrl('c') => break,
                 _ => {
-                    rustbox.write(0, 10, &format!("{:?}", mkey));
+                    let new_state = handle_key(mkey, &state);
+                    state = new_state;
+
                 }
             }
-            rustbox.write(0, 11, &format!("{}", mch));
-            rustbox.present();
         }
-        let elapsed = now.elapsed();
-        let seconds = elapsed.as_secs();
-        let nanos = elapsed.subsec_nanos();
-        // println!("time: {}",
-        //         (seconds * 1000) as f64 + (nanos as f64 / 1000000f64));
-        // println!("{}\n\n", services);
-        // println!("");
+
+        // For timing purposes if needed
+        // let elapsed = now.elapsed();
+        // let seconds = elapsed.as_secs();
+        // let nanos = elapsed.subsec_nanos();
     }
-    // println!("{:?}", services);
 }
+
+fn handle_key(key: rustbox::Key, state: &State) -> State {
+    match state.mode {
+        Mode::Normal => handle_normal_input(key, state),
+        Mode::Command => handle_command_input(key, state),
+    }
+}
+
+fn handle_normal_input(key: rustbox::Key, state: &State) -> State {
+    let new_state = match key {
+
+        Key::Char('0') | Key::Char('1') | Key::Char('2') | Key::Char('3') | Key::Char('4') |
+        Key::Char('5') | Key::Char('6') | Key::Char('7') | Key::Char('8') | Key::Char('9') => {
+            highlight_row(state, number_from_key(key))
+        }
+
+        _ => state.clone(),
+    };
+    new_state
+}
+
+fn handle_command_input(key: rustbox::Key, state: &State) -> State {
+    let mut new_state = state.clone();
+    new_state
+}
+
+fn highlight_row(state: &State, row: Option<usize>) -> State {
+    let mut new_state = state.clone();
+
+    if let Some(row) = row {
+        new_state.highlighted = Some(row);
+    } else {
+        new_state.highlighted = None;
+    }
+
+    new_state
+}
+
+fn number_from_key(key: rustbox::Key) -> Option<usize> {
+    match key {
+        Key::Char('0') => Some(0),
+        Key::Char('1') => Some(1),
+        Key::Char('2') => Some(2),
+        Key::Char('3') => Some(3),
+        Key::Char('4') => Some(4),
+        Key::Char('5') => Some(5),
+        Key::Char('6') => Some(6),
+        Key::Char('7') => Some(7),
+        Key::Char('8') => Some(8),
+        Key::Char('9') => Some(9),
+        _ => None,
+    }
+}
+
+
 fn open_write<P: AsRef<Path>>(path: P) -> io::Result<File> {
     OpenOptions::new()
         .write(true)
@@ -292,7 +332,7 @@ fn get_pid(pid_slice: &[u8]) -> u32 {
 trait ScreenWriter {
     fn write(&self, x: usize, y: usize, text: &str);
     fn write_inverted(&self, x: usize, y: usize, text: &str);
-    fn draw(&self, services: &[Service]);
+    fn draw(&self, state: &State);
 }
 
 impl ScreenWriter for RustBox {
@@ -304,15 +344,19 @@ impl ScreenWriter for RustBox {
         self.print(x, y, rustbox::RB_BOLD, Color::Black, Color::White, text);
     }
 
-    fn draw(&self, services: &[Service]) {
+    fn draw(&self, state: &State) {
         self.clear();
         self.present();
 
-        for (i, service) in services.iter().enumerate() {
+        for (i, service) in state.services.iter().enumerate() {
             let y = i + 1;
             let s = format!("{:>3}: {}", i, service);
 
-            self.write(0, y, &s);
+            if state.highlighted == Some(i) {
+                self.write_inverted(0, y, &s);
+            } else {
+                self.write(0, y, &s);
+            }
         }
         self.present();
     }
