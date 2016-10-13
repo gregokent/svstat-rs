@@ -2,6 +2,9 @@ extern crate libc;
 extern crate rupervise;
 extern crate rustbox;
 
+#[macro_use]
+extern crate lazy_static;
+
 use std::env;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
@@ -10,12 +13,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-
 use std::os::unix::fs::OpenOptionsExt;
 
 use rupervise::tai::*;
 use rustbox::{RustBox, Color, Key};
 
+mod interpreter;
 
 #[derive(Debug, Copy, Clone)]
 enum SvstatError {
@@ -103,7 +106,8 @@ enum Mode {
 #[derive(Clone, Debug)]
 struct State {
     mode: Mode,
-    highlighted: Option<usize>,
+    command: char,
+    highlighted: Option<u32>,
     services: Vec<Service>,
 }
 
@@ -137,6 +141,7 @@ fn main() {
     let rustbox = RustBox::init(Default::default()).unwrap();
     let mut state = State {
         mode: Mode::Normal,
+        command: '\0',
         highlighted: None,
         services: services,
     };
@@ -181,14 +186,18 @@ fn handle_key(key: rustbox::Key, state: &State) -> State {
 fn handle_normal_input(key: rustbox::Key, state: &State) -> State {
     let new_state = match key {
 
-        Key::Char('0') | Key::Char('1') | Key::Char('2') | Key::Char('3') | Key::Char('4') |
-        Key::Char('5') | Key::Char('6') | Key::Char('7') | Key::Char('8') | Key::Char('9') => {
-            highlight_row(state, number_from_key(key))
-        }
-
+        Key::Char(num) if num.is_digit(10) => highlight_row(state, num.to_digit(10)), 
+        Key::Char(c) if is_svc_command(c) => send_command(state, c),
         _ => state.clone(),
     };
     new_state
+}
+
+fn is_svc_command(c: char) -> bool {
+    match c {
+        'i' | 't' | 'd' | 'k' | 'p' | 'c' | 'o' | 'x' => true,
+        _ => false,
+    }
 }
 
 fn handle_command_input(key: rustbox::Key, state: &State) -> State {
@@ -196,7 +205,7 @@ fn handle_command_input(key: rustbox::Key, state: &State) -> State {
     new_state
 }
 
-fn highlight_row(state: &State, row: Option<usize>) -> State {
+fn highlight_row(state: &State, row: Option<u32>) -> State {
     let mut new_state = state.clone();
 
     if let Some(row) = row {
@@ -208,23 +217,12 @@ fn highlight_row(state: &State, row: Option<usize>) -> State {
     new_state
 }
 
-fn number_from_key(key: rustbox::Key) -> Option<usize> {
-    match key {
-        Key::Char('0') => Some(0),
-        Key::Char('1') => Some(1),
-        Key::Char('2') => Some(2),
-        Key::Char('3') => Some(3),
-        Key::Char('4') => Some(4),
-        Key::Char('5') => Some(5),
-        Key::Char('6') => Some(6),
-        Key::Char('7') => Some(7),
-        Key::Char('8') => Some(8),
-        Key::Char('9') => Some(9),
-        _ => None,
-    }
+fn send_command(state: &State, command: char) -> State {
+
+    let mut new_state = state.clone();
+    new_state.command = command;
+    new_state
 }
-
-
 fn open_write<P: AsRef<Path>>(path: P) -> io::Result<File> {
     OpenOptions::new()
         .write(true)
@@ -341,7 +339,7 @@ impl ScreenWriter for RustBox {
     }
 
     fn write_inverted(&self, x: usize, y: usize, text: &str) {
-        self.print(x, y, rustbox::RB_BOLD, Color::Black, Color::White, text);
+        self.print(x, y, rustbox::RB_BOLD, Color::Default, Color::White, text);
     }
 
     fn draw(&self, state: &State) {
@@ -352,12 +350,15 @@ impl ScreenWriter for RustBox {
             let y = i + 1;
             let s = format!("{:>3}: {}", i, service);
 
-            if state.highlighted == Some(i) {
+            if state.highlighted == Some(i as u32) {
                 self.write_inverted(0, y, &s);
             } else {
                 self.write(0, y, &s);
             }
         }
+        self.write(0,
+                   state.services.len() + 1,
+                   &format!("Command: {}", state.command));
         self.present();
     }
 }
